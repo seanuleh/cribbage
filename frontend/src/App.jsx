@@ -264,10 +264,9 @@ function CribbageBoard({ p1Score, p2Score, p1Prev, p2Prev }) {
   )
 }
 
-function ScoreControls({ player, name, score, onAddScore, onNameChange, flipped }) {
+function PlayerLabel({ player, name, score, onNameChange, align, readOnly }) {
   const [editingName, setEditingName] = useState(false)
   const [nameVal, setNameVal] = useState(name)
-  const [customVal, setCustomVal] = useState('')
   const nameRef = useRef(null)
 
   useEffect(() => { setNameVal(name) }, [name])
@@ -278,6 +277,34 @@ function ScoreControls({ player, name, score, onAddScore, onNameChange, flipped 
     if (t) onNameChange(t)
     setEditingName(false)
   }
+
+  const color = player === 1 ? '#ef4444' : '#3b82f6'
+
+  return (
+    <div className={`player-label player-label-${align}`}>
+      <span className="score-num" style={{ color }}>{score}</span>
+      {readOnly ? (
+        <div className="name-btn" style={{ cursor: 'default', opacity: 0.7 }}>
+          <span className="peg-dot" style={{ background: color }} />
+          {name}
+        </div>
+      ) : editingName ? (
+        <form onSubmit={e => { e.preventDefault(); submitName() }}>
+          <input ref={nameRef} value={nameVal} onChange={e => setNameVal(e.target.value)}
+            onBlur={submitName} className="name-input" maxLength={16} />
+        </form>
+      ) : (
+        <button className="name-btn" onClick={() => setEditingName(true)}>
+          <span className="peg-dot" style={{ background: color }} />
+          {name}<span className="edit-hint">✎</span>
+        </button>
+      )}
+    </div>
+  )
+}
+
+function ScoreControls({ player, score, onAddScore, flipped }) {
+  const [customVal, setCustomVal] = useState('')
 
   function submitCustom(e) {
     e.preventDefault()
@@ -290,20 +317,6 @@ function ScoreControls({ player, name, score, onAddScore, onNameChange, flipped 
   return (
     <div className="controls-wrap" style={flipped ? { transform: 'rotate(180deg)' } : {}}>
       <div className="controls-inner">
-        <div className="ctrl-header">
-          <span className="score-num" style={{ color }}>{score}</span>
-          {editingName ? (
-            <form onSubmit={e => { e.preventDefault(); submitName() }}>
-              <input ref={nameRef} value={nameVal} onChange={e => setNameVal(e.target.value)}
-                onBlur={submitName} className="name-input" maxLength={16} />
-            </form>
-          ) : (
-            <button className="name-btn" onClick={() => setEditingName(true)}>
-              <span className="peg-dot" style={{ background: color }} />
-              {name}<span className="edit-hint">✎</span>
-            </button>
-          )}
-        </div>
         <div className="quick-grid">
           {QUICK_SCORES.map(n => (
             <button key={n} className="qbtn" style={{ '--accent': color }}
@@ -325,8 +338,8 @@ function ScoreControls({ player, name, score, onAddScore, onNameChange, flipped 
 
 export default function App() {
   const [gameId, setGameId] = useState(null)
-  const [p1Name, setP1Name] = useState('Player 1')
-  const [p2Name, setP2Name] = useState('Player 2')
+  const [p1Name, setP1Name] = useState('Sean')
+  const [p2Name, setP2Name] = useState('Gina')
   const [p1Score, setP1Score] = useState(0)
   const [p2Score, setP2Score] = useState(0)
   const [p1Prev, setP1Prev] = useState(0)
@@ -361,7 +374,8 @@ export default function App() {
         const g = r.items[0]
         setGameId(g.id); setP1Name(g.player1_name); setP2Name(g.player2_name)
         setP1Score(g.player1_score ?? 0); setP2Score(g.player2_score ?? 0)
-        setP1Prev(g.player1_score ?? 0); setP2Prev(g.player2_score ?? 0)
+        setP1Prev(g.player1_prev ?? 0)
+        setP2Prev(g.player2_prev ?? 0)
       }
     } catch (e) { handlePbErr(e) }
   }
@@ -377,6 +391,7 @@ export default function App() {
       const data = {
         player1_name: state.p1Name ?? p1Name, player2_name: state.p2Name ?? p2Name,
         player1_score: state.p1Score ?? p1Score, player2_score: state.p2Score ?? p2Score,
+        player1_prev: state.p1Prev ?? p1Prev, player2_prev: state.p2Prev ?? p2Prev,
         active: !(state.winner ?? winner), user: pb.authStore.model?.id,
       }
       if (gameId) { await pb.collection('games').update(gameId, data) }
@@ -389,9 +404,10 @@ export default function App() {
     if (winner) return
     setHistory(h => [...h, { p1Score, p2Score, p1Prev, p2Prev }])
     let ns1 = p1Score, ns2 = p2Score
-    if (player === 1) { setP1Prev(p1Score); ns1 = Math.min(MAX_SCORE, p1Score + pts); setP1Score(ns1) }
-    else { setP2Prev(p2Score); ns2 = Math.min(MAX_SCORE, p2Score + pts); setP2Score(ns2) }
-    persist({ p1Score: ns1, p2Score: ns2, winner: ns1 >= MAX_SCORE ? 1 : ns2 >= MAX_SCORE ? 2 : null })
+    let np1Prev = p1Prev, np2Prev = p2Prev
+    if (player === 1) { np1Prev = p1Score; setP1Prev(np1Prev); ns1 = Math.min(MAX_SCORE, p1Score + pts); setP1Score(ns1) }
+    else { np2Prev = p2Score; setP2Prev(np2Prev); ns2 = Math.min(MAX_SCORE, p2Score + pts); setP2Score(ns2) }
+    persist({ p1Score: ns1, p2Score: ns2, p1Prev: np1Prev, p2Prev: np2Prev, winner: ns1 >= MAX_SCORE ? 1 : ns2 >= MAX_SCORE ? 2 : null })
   }
 
   function undo() {
@@ -400,7 +416,7 @@ export default function App() {
     setHistory(h => h.slice(0, -1))
     setP1Score(prev.p1Score); setP2Score(prev.p2Score)
     setP1Prev(prev.p1Prev); setP2Prev(prev.p2Prev)
-    persist({ p1Score: prev.p1Score, p2Score: prev.p2Score, winner: null })
+    persist({ p1Score: prev.p1Score, p2Score: prev.p2Score, p1Prev: prev.p1Prev, p2Prev: prev.p2Prev, winner: null })
   }
 
   async function resetGame() {
@@ -427,11 +443,17 @@ export default function App() {
 
       <div className="game-layout">
         <div className="ctrl-row ctrl-top">
-          <ScoreControls player={2} name={p2Name} score={p2Score}
-            onAddScore={addScore} onNameChange={n => nameChange(2, n)} flipped={true} />
+          <ScoreControls player={2} score={p2Score} onAddScore={addScore} flipped={true} />
         </div>
 
         <div className="board-col">
+          {/* P2 own label — top-right, upside down, editable */}
+          <PlayerLabel player={2} name={p2Name} score={p2Score}
+            onNameChange={n => nameChange(2, n)} align="top-right" />
+          {/* P1 opponent view for P2 — top-left, upside down, read-only */}
+          <PlayerLabel player={1} name={p1Name} score={p1Score}
+            onNameChange={() => {}} align="top-left" readOnly />
+
           <button
             className="board-icon-btn undo-btn"
             onClick={() => setConfirm('undo')}
@@ -446,11 +468,17 @@ export default function App() {
             onClick={() => setConfirm('new')}
             title="New game"
           >↺</button>
+
+          {/* P1 own label — bottom-left, editable */}
+          <PlayerLabel player={1} name={p1Name} score={p1Score}
+            onNameChange={n => nameChange(1, n)} align="bottom-left" />
+          {/* P2 opponent view for P1 — bottom-right, read-only */}
+          <PlayerLabel player={2} name={p2Name} score={p2Score}
+            onNameChange={() => {}} align="bottom-right" readOnly />
         </div>
 
         <div className="ctrl-row ctrl-bottom">
-          <ScoreControls player={1} name={p1Name} score={p1Score}
-            onAddScore={addScore} onNameChange={n => nameChange(1, n)} flipped={false} />
+          <ScoreControls player={1} score={p1Score} onAddScore={addScore} flipped={false} />
         </div>
       </div>
 

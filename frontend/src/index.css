@@ -75,6 +75,43 @@ body {
   overflow: hidden;
 }
 
+/* ===== Player labels (beside the board) ===== */
+.player-label {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  z-index: 4;
+  pointer-events: auto;
+}
+
+.player-label-top-right {
+  top: 8px;
+  right: 8px;
+  align-items: flex-end;
+  transform: rotate(180deg);
+}
+
+.player-label-top-left {
+  top: 8px;
+  left: 8px;
+  align-items: flex-start;
+  transform: rotate(180deg);
+}
+
+.player-label-bottom-left {
+  bottom: 8px;
+  left: 8px;
+  align-items: flex-start;
+}
+
+.player-label-bottom-right {
+  bottom: 8px;
+  right: 8px;
+  align-items: flex-end;
+}
+
 /* ===== Board icon buttons (flank the SVG) ===== */
 .board-icon-btn {
   position: absolute;
@@ -137,15 +174,6 @@ body {
   border-top: 1px solid #3d1f06;
 }
 
-/* ===== Player header inside controls ===== */
-.ctrl-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-  min-width: 52px;
-}
 
 .name-btn {
   background: none;
