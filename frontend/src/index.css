@@ -158,8 +158,8 @@ html, body {
   cursor: not-allowed;
 }
 
-.undo-btn { left: 4px; }
-.new-btn  { right: 4px; }
+.undo-btn { left: 14px; }
+.new-btn  { right: 14px; }
 
 /* ===== Controls wrap ===== */
 .controls-wrap {

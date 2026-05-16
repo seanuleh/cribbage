@@ -200,8 +200,8 @@ function CribbageBoard({ p1Score, p2Score, p1Prev, p2Prev }) {
     const rA = anim.swapped ? BACK_R : PEG_R
     const rB = anim.swapped ? PEG_R : BACK_R
 
-    const hA = anim.posA > 0 ? holes[clamp(anim.posA, 1, 121)] : null
-    const hB = anim.posB > 0 ? holes[clamp(anim.posB, 1, 121)] : null
+    const hA = anim.posA >= 0 ? holes[clamp(anim.posA, 0, 121)] : null
+    const hB = anim.posB >= 0 ? holes[clamp(anim.posB, 0, 121)] : null
 
     return (
       <>
