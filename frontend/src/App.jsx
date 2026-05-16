@@ -37,7 +37,7 @@ function buildBoard() {
   const GG = 4         // extra gap between groups of 5
   const CS = 12        // gap between P1 col and P2 col within a leg
   const LS = 74        // gap between legs
-  const MARGIN_X = 8
+  const MARGIN_X = 20
   const MARGIN_Y = 46  // top margin (room for start/win area + top cap arcs)
   const HOLES = 40     // holes per leg per player
 
@@ -227,10 +227,6 @@ function CribbageBoard({ p1Score, p2Score, p1Prev, p2Prev }) {
     )
   }
 
-  // Skunk line at 91 — vertical across all legs at that y position
-  const y91 = p1[91].y
-  const y61 = p1[61].y
-
   return (
     <svg
       viewBox={`0 0 ${boardW} ${boardH}`}
@@ -243,13 +239,49 @@ function CribbageBoard({ p1Score, p2Score, p1Prev, p2Prev }) {
       <path d={p2Track} fill="none" stroke="#dc2626" strokeWidth={8}
         strokeLinecap="round" strokeLinejoin="round" opacity={0.09} />
 
-      {/* Skunk markers */}
-      <line x1={x0 - 4} y1={y91} x2={x5 + 4} y2={y91}
-        stroke="#a855f7" strokeWidth={0.7} strokeDasharray="2 2" opacity={0.4} />
-      <text x={boardW / 2} y={y91 - 1.5} fontSize={4.5} fill="#a855f7"
-        textAnchor="middle" fontFamily="monospace" opacity={0.55}>91</text>
-      <line x1={x0 - 4} y1={y61} x2={x5 + 4} y2={y61}
-        stroke="#a855f7" strokeWidth={0.5} strokeDasharray="2 2" opacity={0.25} />
+      {/* 10-hole interval markers: line in gap centre, numbers either side of line */}
+      {(() => {
+        // Gap boundaries: score N means the gap is between hole N and hole N+1.
+        // Leg 1 (down, scores 1-40): gap after score 10→ys[9]/ys[10], 20→ys[19]/ys[20], 30→ys[29]/ys[30]
+        // Leg 2 (up,  scores 41-80): score 50=ys[30],51=ys[29] → gap ys[29]/ys[30]; 60→ys[19]/ys[20]; 70→ys[9]/ys[10]
+        // Leg 3 (down, scores 81-120): same as leg1 offsets; 90→ys[9]/ys[10]; 100→ys[19]/ys[20]; 110→ys[29]/ys[30]
+        // Label x: near the leg where those holes live
+        // Leg-end lines: just beyond the last hole since there's no gap between legs at the caps
+        const yBot = ys[39] + HS * 0.75  // below bottom holes (leg1/leg2 turn)
+        const yTop = ys[0]  - HS * 0.75  // above top holes (leg2/leg3 turn)
+        const gaps = [
+          { score: 10,  ya: ys[9],  yb: ys[10], lx: x0 - 12 },
+          { score: 20,  ya: ys[19], yb: ys[20], lx: x0 - 12 },
+          { score: 30,  ya: ys[29], yb: ys[30], lx: x0 - 12 },
+          { score: 40,  y: yBot,                lx: x0 - 12 },
+          { score: 50,  ya: ys[29], yb: ys[30], lx: x2 - 11 },
+          { score: 60,  ya: ys[19], yb: ys[20], lx: x2 - 11 },
+          { score: 70,  ya: ys[9],  yb: ys[10], lx: x2 - 11 },
+          { score: 80,  y: yTop,                lx: x2 - 11 },
+          { score: 90,  ya: ys[9],  yb: ys[10], lx: x5 + 12 },
+          { score: 100, ya: ys[19], yb: ys[20], lx: x5 + 12 },
+          { score: 110, ya: ys[29], yb: ys[30], lx: x5 + 12 },
+          { score: 120, y: yBot,                lx: x5 + 12 },
+        ]
+        const fontSize = 5.2
+        const pad = 2.2
+        return gaps.map(({ score, ya, yb, y: yFixed, lx }) => {
+          const y = yFixed ?? (ya + yb) / 2
+          return (
+            <g key={score}>
+              <line x1={x0 - 5} y1={y} x2={x5 + 5} y2={y}
+                stroke="#000" strokeWidth={0.6} strokeDasharray="2.5 2" opacity={0.35} />
+              {/* P1-facing: above the line */}
+              <text x={lx} y={y - pad} fontSize={fontSize} fill="#444"
+                textAnchor="middle" fontFamily="monospace" dominantBaseline="middle">{score}</text>
+              {/* P2-facing: below the line, rotated 180° around its own centre */}
+              <text x={lx} y={y + pad} fontSize={fontSize} fill="#444"
+                textAnchor="middle" fontFamily="monospace" dominantBaseline="middle"
+                transform={`rotate(180,${lx},${y + pad})`}>{score}</text>
+            </g>
+          )
+        })
+      })()}
 
       {/* Start/win area label */}
       <text x={(x0 + x1) / 2} y={MARGIN_Y - HS * 3}
