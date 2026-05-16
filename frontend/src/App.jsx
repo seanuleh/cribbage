@@ -35,10 +35,10 @@ function buildBoard() {
   // --- geometry constants (SVG units) ---
   const HS = 7.5       // hole-to-hole vertical spacing
   const GG = 4         // extra gap between groups of 5
-  const CS = 8         // gap between P1 col and P2 col within a leg
-  const LS = 18        // gap between legs (edge of one pair to edge of next)
-  const MARGIN_X = 10
-  const MARGIN_Y = 22  // top margin (room for start/win area)
+  const CS = 12        // gap between P1 col and P2 col within a leg
+  const LS = 74        // gap between legs
+  const MARGIN_X = 8
+  const MARGIN_Y = 46  // top margin (room for start/win area + top cap arcs)
   const HOLES = 40     // holes per leg per player
 
   // x positions of the 6 columns
@@ -64,7 +64,7 @@ function buildBoard() {
       ys.push(MARGIN_Y + g * (HS * 5 + GG) + h * HS)
     }
   }
-  const boardH = ys[39] + HS * 2 + 8  // a bit of bottom padding
+  const boardH = ys[39] + 46  // bottom margin matches top (fits bottom cap arcs)
 
   // Build hole arrays [0..121] for each player: {x, y}
   const p1 = new Array(122).fill(null)
@@ -115,9 +115,9 @@ const ANIM_MS = 420
 
 function CribbageBoard({ p1Score, p2Score, p1Prev, p2Prev }) {
   const { p1, p2, boardW, boardH, ys, x0, x1, x2, x3, x4, x5, MARGIN_Y, HS } = BOARD
-  const HOLE_R = 2.6
-  const PEG_R = 4.2
-  const BACK_R = 3.3
+  const HOLE_R = 3.1
+  const PEG_R = 4.6
+  const BACK_R = 3.6
 
   // Per-player visual state: where each peg is drawn and what colour it shows
   // pegA = the peg that was "front" last round (stays still during animation)
@@ -155,22 +155,38 @@ function CribbageBoard({ p1Score, p2Score, p1Prev, p2Prev }) {
     }, ANIM_MS)
   }, [p2Score, p2Prev])
 
-  const bottomY = ys[39] + HS * 0.8
-  const topCapY = ys[0] - HS * 0.8
-  const leg1midX = (x0 + x1) / 2
-  const leg2midX = (x2 + x3) / 2
-  const leg3midX = (x4 + x5) / 2
-  const bottomCapRx = (leg2midX - leg1midX) / 2
-  const bottomCapMidX = (leg1midX + leg2midX) / 2
-  const topCapRx = (leg3midX - leg2midX) / 2
-  const topCapMidX = (leg2midX + leg3midX) / 2
+  // Concentric elliptical arcs — outer rx=49, inner rx=37, gap = CS = x1-x0
+  const trackCS = x1 - x0   // column spacing, derived from returned coords
+  const rxOuter = (x3 - x0) / 2
+  const rxInner = (x2 - x1) / 2
+  const ryOuter = Math.round(rxOuter * 0.75)
+  const ryInner = ryOuter - trackCS
+
+  // SVG arc flags: sweep=0 = CCW (curves outward DOWN), sweep=1 = CW (curves outward UP)
+  const p1Track = [
+    `M ${x0} ${ys[0]}`,
+    `L ${x0} ${ys[39]}`,
+    `A ${rxOuter} ${ryOuter} 0 0 0 ${x3} ${ys[39]}`,  // bottom outer arc, curves DOWN
+    `L ${x3} ${ys[0]}`,
+    `A ${rxInner} ${ryInner} 0 0 1 ${x4} ${ys[0]}`,   // top inner arc, curves UP
+    `L ${x4} ${ys[39]}`,
+  ].join(' ')
+
+  const p2Track = [
+    `M ${x1} ${ys[0]}`,
+    `L ${x1} ${ys[39]}`,
+    `A ${rxInner} ${ryInner} 0 0 0 ${x2} ${ys[39]}`,  // bottom inner arc, curves DOWN
+    `L ${x2} ${ys[0]}`,
+    `A ${rxOuter} ${ryOuter} 0 0 1 ${x5} ${ys[0]}`,   // top outer arc, curves UP
+    `L ${x5} ${ys[39]}`,
+  ].join(' ')
 
   function renderHoles(holes, color) {
     return holes.map((h, i) => {
       if (!h || i === 0 || i === 121) return null
       return (
         <circle key={i} cx={h.x} cy={h.y} r={HOLE_R}
-          fill="#111" stroke={color + '60'} strokeWidth={0.6} />
+          fill="#e2ddd2" stroke={color + '55'} strokeWidth={0.7} />
       )
     })
   }
@@ -221,45 +237,35 @@ function CribbageBoard({ p1Score, p2Score, p1Prev, p2Prev }) {
       preserveAspectRatio="xMidYMid meet"
       style={{ width: '100%', height: '100%', display: 'block' }}
     >
-      {/* Bottom end cap — P1 (outer arc) and P2 (inner arc) */}
-      {/* P1 leg1→leg2 bottom arc */}
-      <path d={`M ${x0} ${bottomY} Q ${bottomCapMidX} ${bottomY + bottomCapRx * 1.4} ${x3} ${bottomY}`}
-        fill="none" stroke="#ef444450" strokeWidth={1} />
-      {/* P2 leg1→leg2 bottom arc */}
-      <path d={`M ${x1} ${bottomY} Q ${bottomCapMidX} ${bottomY + bottomCapRx * 1.1} ${x2} ${bottomY}`}
-        fill="none" stroke="#3b82f650" strokeWidth={1} />
-
-      {/* Top end cap — leg2→leg3 */}
-      {/* P2 */}
-      <path d={`M ${x2} ${topCapY} Q ${topCapMidX} ${topCapY - topCapRx * 1.1} ${x5} ${topCapY}`}
-        fill="none" stroke="#3b82f650" strokeWidth={1} />
-      {/* P1 */}
-      <path d={`M ${x3} ${topCapY} Q ${topCapMidX} ${topCapY - topCapRx * 1.4} ${x4} ${topCapY}`}
-        fill="none" stroke="#ef444450" strokeWidth={1} />
+      {/* Track backgrounds — full S-fold path per player */}
+      <path d={p1Track} fill="none" stroke="#2563eb" strokeWidth={8}
+        strokeLinecap="round" strokeLinejoin="round" opacity={0.09} />
+      <path d={p2Track} fill="none" stroke="#dc2626" strokeWidth={8}
+        strokeLinecap="round" strokeLinejoin="round" opacity={0.09} />
 
       {/* Skunk markers */}
       <line x1={x0 - 4} y1={y91} x2={x5 + 4} y2={y91}
-        stroke="#7c3aed" strokeWidth={0.7} strokeDasharray="2 2" opacity={0.5} />
-      <text x={boardW / 2} y={y91 - 1.5} fontSize={4.5} fill="#a78bfa"
-        textAnchor="middle" fontFamily="monospace" opacity={0.7}>91</text>
+        stroke="#a855f7" strokeWidth={0.7} strokeDasharray="2 2" opacity={0.4} />
+      <text x={boardW / 2} y={y91 - 1.5} fontSize={4.5} fill="#a855f7"
+        textAnchor="middle" fontFamily="monospace" opacity={0.55}>91</text>
       <line x1={x0 - 4} y1={y61} x2={x5 + 4} y2={y61}
-        stroke="#7c3aed" strokeWidth={0.5} strokeDasharray="2 2" opacity={0.35} />
+        stroke="#a855f7" strokeWidth={0.5} strokeDasharray="2 2" opacity={0.25} />
 
       {/* Start/win area label */}
       <text x={(x0 + x1) / 2} y={MARGIN_Y - HS * 3}
-        fontSize={4} fill="#f59e0b" textAnchor="middle" fontFamily="monospace">S/W</text>
+        fontSize={4} fill="#9ca3af" textAnchor="middle" fontFamily="monospace">S/W</text>
 
       {/* Holes */}
-      {renderHoles(p1, '#ef4444')}
-      {renderHoles(p2, '#3b82f6')}
+      {renderHoles(p1, '#2563eb')}
+      {renderHoles(p2, '#dc2626')}
 
       {/* Start holes */}
-      <circle cx={p1[0].x} cy={p1[0].y} r={HOLE_R + 1} fill="#fbbf24" stroke="#f59e0b" strokeWidth={1} />
-      <circle cx={p2[0].x} cy={p2[0].y} r={HOLE_R + 1} fill="#fbbf24" stroke="#f59e0b" strokeWidth={1} />
+      <circle cx={p1[0].x} cy={p1[0].y} r={HOLE_R + 1} fill="#e5e7eb" stroke="#9ca3af" strokeWidth={0.8} />
+      <circle cx={p2[0].x} cy={p2[0].y} r={HOLE_R + 1} fill="#e5e7eb" stroke="#9ca3af" strokeWidth={0.8} />
 
       {/* Pegs: back peg slides to new position, then both swap colour */}
-      {renderPlayerPegs(p1, p1Anim, '#ef4444', '#fca5a5')}
-      {renderPlayerPegs(p2, p2Anim, '#3b82f6', '#93c5fd')}
+      {renderPlayerPegs(p1, p1Anim, '#2563eb', '#93c5fd')}
+      {renderPlayerPegs(p2, p2Anim, '#dc2626', '#fca5a5')}
     </svg>
   )
 }
@@ -278,7 +284,7 @@ function PlayerLabel({ player, name, score, onNameChange, align, readOnly }) {
     setEditingName(false)
   }
 
-  const color = player === 1 ? '#ef4444' : '#3b82f6'
+  const color = player === 1 ? '#3b82f6' : '#ef4444'
 
   return (
     <div className={`player-label player-label-${align}`}>
@@ -312,7 +318,7 @@ function ScoreControls({ player, score, onAddScore, flipped }) {
     if (!isNaN(n) && n > 0 && n <= 29) { onAddScore(player, n); setCustomVal('') }
   }
 
-  const color = player === 1 ? '#ef4444' : '#3b82f6'
+  const color = player === 1 ? '#3b82f6' : '#ef4444'
 
   return (
     <div className="controls-wrap" style={flipped ? { transform: 'rotate(180deg)' } : {}}>
