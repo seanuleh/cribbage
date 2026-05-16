@@ -342,33 +342,69 @@ function PlayerLabel({ player, name, score, onNameChange, align, readOnly }) {
 }
 
 function ScoreControls({ player, score, onAddScore, flipped }) {
-  const [customVal, setCustomVal] = useState('')
+  const MAX_PTS = 29
+  const [val, setVal] = useState(0)
+  const [returning, setReturning] = useState(false)
+  const color = player === 1 ? '#2563eb' : '#dc2626'
+  const disabled = score >= MAX_SCORE
 
-  function submitCustom(e) {
-    e.preventDefault()
-    const n = parseInt(customVal, 10)
-    if (!isNaN(n) && n > 0 && n <= 29) { onAddScore(player, n); setCustomVal('') }
+  function clampVal(n) { return Math.max(0, Math.min(MAX_PTS, n)) }
+
+  function submit() {
+    if (val === 0 || disabled) return
+    onAddScore(player, val)
+    // animate back to zero
+    setReturning(true)
+    setTimeout(() => { setVal(0); setReturning(false) }, 350)
   }
 
-  const color = player === 1 ? '#3b82f6' : '#ef4444'
+  function nudge(delta) {
+    if (disabled) return
+    setVal(v => clampVal(v + delta))
+  }
+
+  function handleSlider(e) {
+    if (disabled) return
+    setVal(clampVal(parseInt(e.target.value, 10)))
+  }
+
+  const pct = (val / MAX_PTS) * 100
 
   return (
     <div className="controls-wrap" style={flipped ? { transform: 'rotate(180deg)' } : {}}>
-      <div className="controls-inner">
-        <div className="quick-grid">
-          {QUICK_SCORES.map(n => (
-            <button key={n} className="qbtn" style={{ '--accent': color }}
-              onClick={() => onAddScore(player, n)} disabled={score >= MAX_SCORE}>
-              +{n}
-            </button>
-          ))}
+      <div className="slider-strip">
+        {/* − button */}
+        <button className="nudge-btn" onClick={() => nudge(-1)} disabled={disabled || val === 0}
+          aria-label="Decrease">−</button>
+
+        {/* Slider track */}
+        <div className="slider-track-wrap">
+          <div className="slider-fill" style={{ width: `${pct}%`, background: color, opacity: returning ? 0 : 0.18 }} />
+          <input
+            type="range" min={0} max={MAX_PTS} value={returning ? 0 : val}
+            onChange={handleSlider}
+            className="slider-input"
+            style={{ '--thumb-color': color }}
+            disabled={disabled}
+          />
         </div>
-        <form className="custom-row" onSubmit={submitCustom}>
-          <input type="number" min="1" max="29" value={customVal}
-            onChange={e => setCustomVal(e.target.value)}
-            placeholder="…" className="custom-input" disabled={score >= MAX_SCORE} />
-          <button type="submit" className="custom-btn" disabled={score >= MAX_SCORE || !customVal}>+</button>
-        </form>
+
+        {/* + button */}
+        <button className="nudge-btn" onClick={() => nudge(1)} disabled={disabled || val >= MAX_PTS}
+          aria-label="Increase">+</button>
+
+        {/* Value readout */}
+        <div className="slider-readout" style={{ color: val > 0 ? color : 'var(--text-muted)' }}>
+          <span className="slider-val" style={returning ? { transition: 'color 0.3s' } : {}}>
+            {val > 0 ? `+${val}` : '·'}
+          </span>
+        </div>
+
+        {/* Submit */}
+        <button className="submit-btn" onClick={submit} disabled={disabled || val === 0}
+          style={{ '--accent': color }} aria-label="Add score">
+          ✓
+        </button>
       </div>
     </div>
   )
