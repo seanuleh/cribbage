@@ -1,0 +1,17 @@
+# Dependencies
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+
+# PocketBase data (never commit the database)
+pocketbase/pb_data/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
