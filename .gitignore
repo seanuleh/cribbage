@@ -7,6 +7,11 @@ frontend/dist/
 # PocketBase data (never commit the database)
 pocketbase/pb_data/
 
+# Android build artifacts
+frontend/android/.gradle/
+frontend/android/app/build/
+frontend/android/build/
+
 # Environment / secrets
 .env
 .env.*

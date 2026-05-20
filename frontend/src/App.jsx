@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
-import pb from './pb.js'
 
 const MAX_SCORE = 121
-const QUICK_SCORES = [1, 2, 3, 4, 6, 8, 12, 15, 16, 24, 29]
+const STORAGE_KEY = 'cribbage_game'
 
 function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)) }
 
@@ -503,95 +502,74 @@ function ScoreControls({ player, score, onAddScore, flipped }) {
   )
 }
 
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch { return null }
+}
+
+function saveState(state) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)) } catch {}
+}
+
 export default function App() {
-  const [gameId, setGameId] = useState(null)
-  const [p1Name, setP1Name] = useState('Sean')
-  const [p2Name, setP2Name] = useState('Gina')
-  const [p1Score, setP1Score] = useState(0)
-  const [p2Score, setP2Score] = useState(0)
-  const [p1Prev, setP1Prev] = useState(0)
-  const [p2Prev, setP2Prev] = useState(0)
-  const [history, setHistory] = useState([])
-  const [pbOk, setPbOk] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const saved = loadState()
+
+  const [p1Name, setP1Name] = useState(saved?.p1Name ?? 'Sean')
+  const [p2Name, setP2Name] = useState(saved?.p2Name ?? 'Gina')
+  const [p1Score, setP1Score] = useState(saved?.p1Score ?? 0)
+  const [p2Score, setP2Score] = useState(saved?.p2Score ?? 0)
+  const [p1Prev, setP1Prev] = useState(saved?.p1Prev ?? 0)
+  const [p2Prev, setP2Prev] = useState(saved?.p2Prev ?? 0)
+  const [history, setHistory] = useState(saved?.history ?? [])
   const [confirm, setConfirm] = useState(null) // 'undo' | 'new' | null
 
   const winner = p1Score >= MAX_SCORE ? 1 : p2Score >= MAX_SCORE ? 2 : null
 
-  useEffect(() => {
-    async function init() {
-      try {
-        const h = await fetch('/api/health')
-        if (!h.ok) throw new Error()
-        setPbOk(true)
-        await loadGame()
-      } catch { setPbOk(false) }
-      finally { setLoading(false) }
-    }
-    init()
-  }, [])
-
-  async function loadGame() {
-    try {
-      if (!pb.authStore.isValid) return
-      const r = await pb.collection('games').getList(1, 1, { filter: 'active = true', sort: '-created' })
-      if (r.items.length) {
-        const g = r.items[0]
-        setGameId(g.id); setP1Name(g.player1_name); setP2Name(g.player2_name)
-        setP1Score(g.player1_score ?? 0); setP2Score(g.player2_score ?? 0)
-        setP1Prev(g.player1_prev ?? 0)
-        setP2Prev(g.player2_prev ?? 0)
-      }
-    } catch (e) { handlePbErr(e) }
-  }
-
-  function handlePbErr(e) {
-    if (e?.status === 401) { pb.authStore.clear(); setError('Session expired — please refresh.') }
-  }
-
-  async function persist(state) {
-    if (!pbOk || !pb.authStore.isValid) return
-    setSaving(true)
-    try {
-      const data = {
-        player1_name: state.p1Name ?? p1Name, player2_name: state.p2Name ?? p2Name,
-        player1_score: state.p1Score ?? p1Score, player2_score: state.p2Score ?? p2Score,
-        player1_prev: state.p1Prev ?? p1Prev, player2_prev: state.p2Prev ?? p2Prev,
-        active: !(state.winner ?? winner), user: pb.authStore.model?.id,
-      }
-      if (gameId) { await pb.collection('games').update(gameId, data) }
-      else { const rec = await pb.collection('games').create(data); setGameId(rec.id) }
-    } catch (e) { handlePbErr(e) }
-    finally { setSaving(false) }
+  function persist(state) {
+    saveState({
+      p1Name:  state.p1Name  ?? p1Name,
+      p2Name:  state.p2Name  ?? p2Name,
+      p1Score: state.p1Score ?? p1Score,
+      p2Score: state.p2Score ?? p2Score,
+      p1Prev:  state.p1Prev  ?? p1Prev,
+      p2Prev:  state.p2Prev  ?? p2Prev,
+      history: state.history ?? history,
+    })
   }
 
   function addScore(player, pts) {
     if (winner) return
-    setHistory(h => [...h, { p1Score, p2Score, p1Prev, p2Prev }])
+    const newHistory = [...history, { p1Score, p2Score, p1Prev, p2Prev }]
+    setHistory(newHistory)
     let ns1 = p1Score, ns2 = p2Score
     let np1Prev = p1Prev, np2Prev = p2Prev
-    if (player === 1) { np1Prev = p1Score; setP1Prev(np1Prev); ns1 = Math.min(MAX_SCORE, p1Score + pts); setP1Score(ns1) }
-    else { np2Prev = p2Score; setP2Prev(np2Prev); ns2 = Math.min(MAX_SCORE, p2Score + pts); setP2Score(ns2) }
-    persist({ p1Score: ns1, p2Score: ns2, p1Prev: np1Prev, p2Prev: np2Prev, winner: ns1 >= MAX_SCORE ? 1 : ns2 >= MAX_SCORE ? 2 : null })
+    if (player === 1) {
+      np1Prev = p1Score; setP1Prev(np1Prev)
+      ns1 = Math.min(MAX_SCORE, p1Score + pts); setP1Score(ns1)
+    } else {
+      np2Prev = p2Score; setP2Prev(np2Prev)
+      ns2 = Math.min(MAX_SCORE, p2Score + pts); setP2Score(ns2)
+    }
+    persist({ p1Score: ns1, p2Score: ns2, p1Prev: np1Prev, p2Prev: np2Prev, history: newHistory })
   }
 
   function undo() {
     if (!history.length) return
     const prev = history[history.length - 1]
-    setHistory(h => h.slice(0, -1))
+    const newHistory = history.slice(0, -1)
+    setHistory(newHistory)
     setP1Score(prev.p1Score); setP2Score(prev.p2Score)
     setP1Prev(prev.p1Prev); setP2Prev(prev.p2Prev)
-    persist({ p1Score: prev.p1Score, p2Score: prev.p2Score, p1Prev: prev.p1Prev, p2Prev: prev.p2Prev, winner: null })
+    persist({ p1Score: prev.p1Score, p2Score: prev.p2Score, p1Prev: prev.p1Prev, p2Prev: prev.p2Prev, history: newHistory })
   }
 
-  async function resetGame() {
-    if (pbOk && pb.authStore.isValid && gameId) {
-      try { await pb.collection('games').update(gameId, { active: false }) } catch (e) { handlePbErr(e) }
-    }
-    setGameId(null); setP1Score(0); setP2Score(0); setP1Prev(0); setP2Prev(0)
-    setHistory([]); setError(null)
+  function resetGame() {
+    setP1Score(0); setP2Score(0); setP1Prev(0); setP2Prev(0)
+    setHistory([])
+    persist({ p1Score: 0, p2Score: 0, p1Prev: 0, p2Prev: 0, history: [] })
   }
 
   function nameChange(player, name) {
@@ -602,12 +580,8 @@ export default function App() {
   const skunked = winner && ((winner === 1 && p2Score < 91) || (winner === 2 && p1Score < 91))
   const doubleSkunked = winner && ((winner === 1 && p2Score < 61) || (winner === 2 && p1Score < 61))
 
-  if (loading) return <div className="loading-screen"><div className="spinner" /></div>
-
   return (
     <div className="app">
-      {error && <div className="errbar">{error}<button onClick={() => setError(null)}>×</button></div>}
-
       <div className="game-layout">
         <div className="ctrl-row ctrl-top">
           <ScoreControls player={2} score={p2Score} onAddScore={addScore} flipped={true} />

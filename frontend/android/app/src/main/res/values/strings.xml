@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">cribbage</string>
+    <string name="title_activity_main">cribbage</string>
+    <string name="package_name">com.uleh.cribbage</string>
+    <string name="custom_url_scheme">com.uleh.cribbage</string>
+</resources>
