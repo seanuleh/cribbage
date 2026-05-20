@@ -105,13 +105,79 @@ const BOARD = buildBoard()
   Animation model:
   Each player has two pegs: A (was front) and B (was back).
   On score:
-    Phase 1 — B slides to new score position (transition on transform, no colour change yet)
-    Phase 2 — after slide completes, both swap colours (B becomes front, A becomes back)
+    Phase 1 — B is driven by RAF along the track path to the new score position
+    Phase 2 — after RAF completes, both swap colours (B becomes front, A becomes back)
 
-  Props carry the *committed* score state. The board manages animation phases internally.
-  We use a ref-based timer to trigger phase 2 after the CSS transition duration.
+  buildWaypoints generates hole positions plus elliptical arc interpolation points at
+  the bottom cap (scores 40→41) and top cap (scores 80→81), so the peg follows the
+  curved track instead of cutting through the board in a straight line.
 */
 const ANIM_MS = 420
+
+function arcWaypoints(cx, cy, rx, ry, thetaStart, thetaEnd, n = 16) {
+  const pts = []
+  for (let i = 1; i <= n; i++) {
+    const theta = thetaStart + (thetaEnd - thetaStart) * (i / (n + 1))
+    pts.push({ x: cx + rx * Math.cos(theta), y: cy + ry * Math.sin(theta) })
+  }
+  return pts
+}
+
+function buildWaypoints(holes, fromScore, toScore, player) {
+  const { ys, x0, x1, x2, x3, x4 } = BOARD
+  const rxOuter = (x3 - x0) / 2
+  const rxInner = (x2 - x1) / 2
+  const ryOuter = Math.round(rxOuter * 0.75)
+  const ryInner = ryOuter - (x1 - x0)
+  // Both players' bottom caps share centre (x0+x3)/2; top caps share (x3+x4)/2
+  const cxBot = (x0 + x3) / 2, cyBot = ys[39]
+  const cxTop = (x3 + x4) / 2, cyTop = ys[0]
+
+  const step = fromScore <= toScore ? 1 : -1
+  const pts = []
+
+  for (let s = fromScore; ; s += step) {
+    const h = holes[clamp(s, 0, 121)]
+    if (h) pts.push({ x: h.x, y: h.y })
+    if (s === toScore) break
+
+    if (step > 0) {
+      if (s === 40) {
+        // Bottom cap forward: CCW arc dips DOWN (θ π→0, sin positive)
+        const [rx, ry] = player === 1 ? [rxOuter, ryOuter] : [rxInner, ryInner]
+        pts.push(...arcWaypoints(cxBot, cyBot, rx, ry, Math.PI, 0))
+      } else if (s === 80) {
+        // Top cap forward: CW arc rises UP (θ π→2π, sin goes negative)
+        const [rx, ry] = player === 1 ? [rxInner, ryInner] : [rxOuter, ryOuter]
+        pts.push(...arcWaypoints(cxTop, cyTop, rx, ry, Math.PI, 2 * Math.PI))
+      }
+    } else {
+      if (s === 41) {
+        // Bottom cap backward: arc dips DOWN (θ 0→π)
+        const [rx, ry] = player === 1 ? [rxOuter, ryOuter] : [rxInner, ryInner]
+        pts.push(...arcWaypoints(cxBot, cyBot, rx, ry, 0, Math.PI))
+      } else if (s === 81) {
+        // Top cap backward: arc rises UP (θ 2π→π)
+        const [rx, ry] = player === 1 ? [rxInner, ryInner] : [rxOuter, ryOuter]
+        pts.push(...arcWaypoints(cxTop, cyTop, rx, ry, 2 * Math.PI, Math.PI))
+      }
+    }
+  }
+
+  return pts
+}
+
+function easeInOut(t) { return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t }
+
+function interpWaypoints(waypoints, t) {
+  const n = waypoints.length
+  if (n <= 1) return waypoints[0]
+  const raw = t * (n - 1)
+  const i = Math.min(Math.floor(raw), n - 2)
+  const f = raw - i
+  const a = waypoints[i], b = waypoints[i + 1]
+  return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f }
+}
 
 function CribbageBoard({ p1Score, p2Score, p1Prev, p2Prev }) {
   const { p1, p2, boardW, boardH, ys, x0, x1, x2, x3, x4, x5, MARGIN_Y, HS } = BOARD
@@ -119,41 +185,73 @@ function CribbageBoard({ p1Score, p2Score, p1Prev, p2Prev }) {
   const PEG_R = 4.6
   const BACK_R = 3.6
 
-  // Per-player visual state: where each peg is drawn and what colour it shows
-  // pegA = the peg that was "front" last round (stays still during animation)
-  // pegB = the peg that was "back" last round (moves to new position)
-  const [p1Anim, setP1Anim] = useState({ posA: 0, posB: 0, swapped: false })
-  const [p2Anim, setP2Anim] = useState({ posA: 0, posB: 0, swapped: false })
-  const p1Timer = useRef(null)
-  const p2Timer = useRef(null)
+  // React state drives colours/sizes; transform on pegB is RAF-driven during animation
+  const [p1Visual, setP1Visual] = useState({ posA: 0, posB: 0, swapped: false })
+  const [p2Visual, setP2Visual] = useState({ posA: 0, posB: 0, swapped: false })
 
-  // When props change, kick off the animation sequence for the changed player
+  // Refs to the moving peg (B) SVG elements — RAF writes their transform directly
+  const p1BRef = useRef(null)
+  const p2BRef = useRef(null)
+  const p1AnimRef = useRef({ rafId: null })
+  const p2AnimRef = useRef({ rafId: null })
+
   const prevP1 = useRef({ score: 0, prev: 0 })
   const prevP2 = useRef({ score: 0, prev: 0 })
+
+  function startAnim(player, holes, fromScore, toScore) {
+    const animRef = player === 1 ? p1AnimRef : p2AnimRef
+    const pegBRef = player === 1 ? p1BRef : p2BRef
+    const setVisual = player === 1 ? setP1Visual : setP2Visual
+
+    cancelAnimationFrame(animRef.current.rafId)
+
+    if (fromScore === toScore) {
+      setVisual({ posA: fromScore, posB: toScore, swapped: false })
+      return
+    }
+
+    const waypoints = buildWaypoints(holes, fromScore, toScore, player)
+    const startTime = performance.now()
+    // pegB starts at fromScore; RAF immediately overrides transform each frame
+    setVisual({ posA: fromScore, posB: fromScore, swapped: false })
+
+    function tick() {
+      const elapsed = performance.now() - startTime
+      const t = easeInOut(Math.min(1, elapsed / ANIM_MS))
+      const pos = interpWaypoints(waypoints, t)
+      if (pegBRef.current) {
+        pegBRef.current.style.transform = `translate(${pos.x}px, ${pos.y}px)`
+      }
+      if (elapsed < ANIM_MS) {
+        animRef.current.rafId = requestAnimationFrame(tick)
+      } else {
+        setVisual({ posA: fromScore, posB: toScore, swapped: true })
+      }
+    }
+
+    animRef.current.rafId = requestAnimationFrame(tick)
+  }
 
   useEffect(() => {
     const changed = p1Score !== prevP1.current.score || p1Prev !== prevP1.current.prev
     prevP1.current = { score: p1Score, prev: p1Prev }
     if (!changed) return
-    // Phase 1: B moves to new score, A stays at old score (prev)
-    setP1Anim({ posA: p1Prev, posB: p1Score, swapped: false })
-    clearTimeout(p1Timer.current)
-    p1Timer.current = setTimeout(() => {
-      // Phase 2: colours swap — B is now front, A is now back
-      setP1Anim({ posA: p1Prev, posB: p1Score, swapped: true })
-    }, ANIM_MS)
+    startAnim(1, p1, p1Prev, p1Score)
   }, [p1Score, p1Prev])
 
   useEffect(() => {
     const changed = p2Score !== prevP2.current.score || p2Prev !== prevP2.current.prev
     prevP2.current = { score: p2Score, prev: p2Prev }
     if (!changed) return
-    setP2Anim({ posA: p2Prev, posB: p2Score, swapped: false })
-    clearTimeout(p2Timer.current)
-    p2Timer.current = setTimeout(() => {
-      setP2Anim({ posA: p2Prev, posB: p2Score, swapped: true })
-    }, ANIM_MS)
+    startAnim(2, p2, p2Prev, p2Score)
   }, [p2Score, p2Prev])
+
+  useEffect(() => {
+    return () => {
+      cancelAnimationFrame(p1AnimRef.current.rafId)
+      cancelAnimationFrame(p2AnimRef.current.rafId)
+    }
+  }, [])
 
   // Concentric elliptical arcs — outer rx=49, inner rx=37, gap = CS = x1-x0
   const trackCS = x1 - x0   // column spacing, derived from returned coords
@@ -191,17 +289,14 @@ function CribbageBoard({ p1Score, p2Score, p1Prev, p2Prev }) {
     })
   }
 
-  // Render two pegs for one player using the animation state
-  function renderPlayerPegs(holes, anim, frontColor, backColor) {
-    // pegA: stationary, was front → becomes back after swap
-    // pegB: moves to new position → becomes front after swap
-    const colorA = anim.swapped ? backColor : frontColor
-    const colorB = anim.swapped ? frontColor : backColor
-    const rA = anim.swapped ? BACK_R : PEG_R
-    const rB = anim.swapped ? PEG_R : BACK_R
+  function renderPlayerPegs(holes, visual, frontColor, backColor, pegBRef) {
+    const colorA = visual.swapped ? backColor : frontColor
+    const colorB = visual.swapped ? frontColor : backColor
+    const rA = visual.swapped ? BACK_R : PEG_R
+    const rB = visual.swapped ? PEG_R : BACK_R
 
-    const hA = anim.posA >= 0 ? holes[clamp(anim.posA, 0, 121)] : null
-    const hB = anim.posB >= 0 ? holes[clamp(anim.posB, 0, 121)] : null
+    const hA = holes[clamp(visual.posA, 0, 121)]
+    const hB = holes[clamp(visual.posB, 0, 121)]
 
     return (
       <>
@@ -210,17 +305,15 @@ function CribbageBoard({ p1Score, p2Score, p1Prev, p2Prev }) {
             stroke="rgba(0,0,0,0.6)" strokeWidth={0.8}
             style={{
               transform: `translate(${hA.x}px,${hA.y}px)`,
-              transition: anim.swapped ? `fill ${ANIM_MS * 0.3}ms ease` : 'none',
+              transition: visual.swapped ? `fill ${ANIM_MS * 0.3}ms ease` : 'none',
             }} />
         )}
         {hB && (
-          <circle cx={0} cy={0} r={rB} fill={colorB}
+          <circle ref={pegBRef} cx={0} cy={0} r={rB} fill={colorB}
             stroke="rgba(0,0,0,0.6)" strokeWidth={0.8}
             style={{
               transform: `translate(${hB.x}px,${hB.y}px)`,
-              transition: anim.swapped
-                ? `fill ${ANIM_MS * 0.3}ms ease`
-                : `transform ${ANIM_MS}ms cubic-bezier(.4,0,.2,1)`,
+              transition: visual.swapped ? `fill ${ANIM_MS * 0.3}ms ease` : 'none',
             }} />
         )}
       </>
@@ -295,9 +388,9 @@ function CribbageBoard({ p1Score, p2Score, p1Prev, p2Prev }) {
       <circle cx={p1[0].x} cy={p1[0].y} r={HOLE_R + 1} fill="#e5e7eb" stroke="#9ca3af" strokeWidth={0.8} />
       <circle cx={p2[0].x} cy={p2[0].y} r={HOLE_R + 1} fill="#e5e7eb" stroke="#9ca3af" strokeWidth={0.8} />
 
-      {/* Pegs: back peg slides to new position, then both swap colour */}
-      {renderPlayerPegs(p1, p1Anim, '#2563eb', '#93c5fd')}
-      {renderPlayerPegs(p2, p2Anim, '#dc2626', '#fca5a5')}
+      {/* Pegs: pegB driven by RAF along track path, then both swap colour */}
+      {renderPlayerPegs(p1, p1Visual, '#2563eb', '#93c5fd', p1BRef)}
+      {renderPlayerPegs(p2, p2Visual, '#dc2626', '#fca5a5', p2BRef)}
     </svg>
   )
 }
