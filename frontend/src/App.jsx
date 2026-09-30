@@ -559,7 +559,7 @@ export default function App() {
         player1_name: state.p1Name ?? p1Name, player2_name: state.p2Name ?? p2Name,
         player1_score: state.p1Score ?? p1Score, player2_score: state.p2Score ?? p2Score,
         player1_prev: state.p1Prev ?? p1Prev, player2_prev: state.p2Prev ?? p2Prev,
-        active: !(state.winner ?? winner), user: pb.authStore.model?.id,
+        active: !(state.winner ?? winner), user: pb.authStore.record?.id,
       }
       if (gameId) { await pb.collection('games').update(gameId, data) }
       else { const rec = await pb.collection('games').create(data); setGameId(rec.id) }

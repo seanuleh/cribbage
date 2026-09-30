@@ -1,7 +1,7 @@
 # cribbage — Agent Reference
 
 ## Stack
-- React + Vite frontend, PocketBase 0.22.22 backend, single Docker container
+- React + Vite frontend, PocketBase 0.40.4 backend, single Docker container
 - Auth handled externally by cf-auth sidecar + nginx sub_filter
 
 ## Deployment
@@ -32,7 +32,7 @@ To add/change schema:
 ## Get an Admin Token (inside container)
 
 ```bash
-docker exec cribbage sh -c 'curl -s -X POST http://localhost:8090/api/admins/auth-with-password \
+docker exec cribbage sh -c 'curl -s -X POST http://localhost:8090/api/collections/_superusers/auth-with-password \
   -H "Content-Type: application/json" \
   -d "{\"identity\":\"${PB_ADMIN_EMAIL}\",\"password\":\"${PB_ADMIN_PASSWORD}\"}" \
   | sed "s/.*\"token\":\"\([^\"]*\)\".*/\1/"'

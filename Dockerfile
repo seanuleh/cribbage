@@ -6,9 +6,10 @@ COPY frontend/ ./
 RUN npm run build
 
 FROM alpine:3.19
-ARG PB_VERSION=0.22.22
+ARG PB_VERSION=0.40.4
 
-RUN apk add --no-cache wget unzip ca-certificates bash
+# curl: admin-token one-liners in CLAUDE.md (busybox wget returns empty inside $())
+RUN apk add --no-cache wget unzip ca-certificates curl
 
 RUN wget -q "https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_linux_amd64.zip" \
     -O /tmp/pb.zip && \

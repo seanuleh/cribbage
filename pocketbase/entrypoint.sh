@@ -1,34 +1,11 @@
-#!/bin/bash
-set -e
+#!/bin/sh
+# cribbage — container init (PocketBase 0.23+).
+# Schema + settings live in pb_migrations/ (applied on serve). This only ensures the
+# superuser exists (idempotent) and starts PB. /bin/sh: Alpine has no bash.
 
-PB_BIN="/pb/pocketbase"
-DATA_DIR="/pb/pb_data"
+PB="/pb/pocketbase"
 
-$PB_BIN serve --http=0.0.0.0:8090 --dir="$DATA_DIR" --publicDir="/pb/pb_public" &
-PB_PID=$!
+$PB superuser upsert "$PB_ADMIN_EMAIL" "$PB_ADMIN_PASSWORD" --dir=/pb/pb_data
 
-for i in $(seq 1 30); do
-  if wget -q --spider http://localhost:8090/api/health 2>/dev/null; then break; fi
-  sleep 1
-done
-
-wget -q -O - --post-data="{\"email\":\"${PB_ADMIN_EMAIL}\",\"password\":\"${PB_ADMIN_PASSWORD}\",\"passwordConfirm\":\"${PB_ADMIN_PASSWORD}\"}" \
-  --header="Content-Type: application/json" \
-  http://localhost:8090/api/admins 2>&1 || true
-
-TOKEN=$(wget -q -O - --post-data="{\"identity\":\"${PB_ADMIN_EMAIL}\",\"password\":\"${PB_ADMIN_PASSWORD}\"}" \
-  --header="Content-Type: application/json" \
-  http://localhost:8090/api/admins/auth-with-password | sed 's/.*"token":"\([^"]*\)".*/\1/')
-
-wget -q -O - --method=PATCH \
-  --header="Content-Type: application/json" \
-  --header="Authorization: ${TOKEN}" \
-  --body-data='{"trustedProxy":{"headers":["X-Forwarded-For"]}}' \
-  http://localhost:8090/api/settings 2>&1 | head -c 120 || true
-
-kill $PB_PID
-wait $PB_PID 2>/dev/null || true
-
-if [ "$1" = "--init-only" ]; then exit 0; fi
-
-exec $PB_BIN serve --http=0.0.0.0:8090 --dir="$DATA_DIR" --publicDir="/pb/pb_public"
+exec $PB serve --http=0.0.0.0:8090 --dir=/pb/pb_data --publicDir=/pb/pb_public \
+  --migrationsDir=/pb/pb_migrations --hooksDir=/pb/pb_hooks

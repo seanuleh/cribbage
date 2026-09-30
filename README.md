@@ -7,7 +7,7 @@ Two players sit opposite each other — P2 controls are at the top (rotated), P1
 ## Stack
 
 - **Frontend**: React + Vite
-- **Backend**: PocketBase 0.22.22 (REST API, auth, realtime)
+- **Backend**: PocketBase 0.40.4 (REST API, auth, realtime)
 - **Container**: Single Alpine Docker image — frontend built into PocketBase `--publicDir`
 - **Auth**: Cloudflare Access + cf-auth sidecar (nginx `auth_request` + localStorage token injection)
 
